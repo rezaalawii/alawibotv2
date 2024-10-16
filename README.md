@@ -22,8 +22,8 @@ Before running the bot, ensure you have the following installed on your machine:
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/alawi-bot.git
-   cd alawi-bot
+   git clone https://github.com/yourusername/alawibotv2.git
+   cd alawibotv2
    ```
 
 2. Install the required dependencies:
@@ -74,7 +74,7 @@ Developed by [Reza Alawi](https://github.com/rezaalawii). Feel free to connect o
 
 
 ### Instructions
-1. Replace `https://github.com/yourusername/alawi-bot.git` with the actual URL of your GitHub repository.
+1. Replace `https://github.com/yourusername/alawibotv2.git` with the actual URL of your GitHub repository.
 2. Make sure the features, commands, and contact links reflect your preferences or changes.
 3. Save this as `README.md` in the root of your project directory.
 
