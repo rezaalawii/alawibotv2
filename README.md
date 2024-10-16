@@ -1,4 +1,3 @@
-```markdown
 # Alawi Bot
 
 Alawi Bot is a WhatsApp bot built using [Baileys](https://github.com/adiwajshing/Baileys), a Node.js library for interacting with the WhatsApp Web API. This bot comes with several features, including tagging all group members, hiding tags, and converting images and stickers.
