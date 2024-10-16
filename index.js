@@ -67,7 +67,7 @@ const showMenu = (sock, jid) => {
   let menuMessage = "=====================\n";
   menuMessage += "        Bot Menu\n";
   menuMessage += "=====================\n\n";
-  
+
   menuItems.forEach(item => {
     menuMessage += `* ${item.feature}\n`;
     menuMessage += `  Command: ${item.command}\n`;
@@ -85,10 +85,10 @@ const showMenu = (sock, jid) => {
 async function createSticker(buffer, sock, jid, isAnimated = false) {
   try {
     if (isAnimated) {
-      // Use path.join for proper file paths
-      const tempPath = './temp'; // Folder untuk menyimpan file temporary
-      
-      // Buat folder temp jika belum ada
+
+      const tempPath = './temp';
+
+
       if (!fs.existsSync(tempPath)) {
         await fs.mkdir(tempPath);
       }
@@ -97,11 +97,11 @@ async function createSticker(buffer, sock, jid, isAnimated = false) {
       const inputFile = `${tempPath}/input_${timestamp}.${buffer.mimetype === 'image/gif' ? 'gif' : 'mp4'}`;
       const outputFile = `${tempPath}/output_${timestamp}.webp`;
 
-      // Tulis file input
+
       await fs.writeFile(inputFile, buffer);
 
       try {
-        // Get video metadata
+
         const probe = await new Promise((resolve, reject) => {
           ffmpeg.ffprobe(inputFile, (err, metadata) => {
             if (err) reject(err);
@@ -110,18 +110,16 @@ async function createSticker(buffer, sock, jid, isAnimated = false) {
         });
 
         const { width, height } = probe.streams[0];
-        
-        // Calculate dimensions
+
         const maxSize = 512;
         const scale = Math.min(maxSize / width, maxSize / height);
         const newWidth = Math.round(width * scale);
         const newHeight = Math.round(height * scale);
-        
-        // Calculate padding
+
         const padX = Math.round((maxSize - newWidth) / 2);
         const padY = Math.round((maxSize - newHeight) / 2);
 
-        // Proses konversi
+
         await new Promise((resolve, reject) => {
           ffmpeg(inputFile)
             .addOutputOptions([
@@ -141,21 +139,21 @@ async function createSticker(buffer, sock, jid, isAnimated = false) {
             .save(outputFile);
         });
 
-        // Baca file output
+
         const stickerBuffer = await fs.readFile(outputFile);
-        
-        // Kirim sticker
+
+
         await sock.sendMessage(jid, { sticker: stickerBuffer });
 
-        // Hapus file temporary
+
         await fs.unlink(inputFile).catch(console.error);
         await fs.unlink(outputFile).catch(console.error);
 
       } catch (ffmpegError) {
         console.error('FFmpeg Error:', ffmpegError);
         spinner.fail(`FFmpeg Error: ${ffmpegError.message}`);
-        
-        // Cleanup pada kasus error
+
+
         await fs.unlink(inputFile).catch(console.error);
         await fs.unlink(outputFile).catch(console.error);
         throw ffmpegError;
@@ -164,13 +162,13 @@ async function createSticker(buffer, sock, jid, isAnimated = false) {
     } else {
       const image = sharp(buffer);
       const metadata = await image.metadata();
-      
+
       const maxSize = 512;
-      
+
       const scale = Math.min(maxSize / metadata.width, maxSize / metadata.height);
       const newWidth = Math.round(metadata.width * scale);
       const newHeight = Math.round(metadata.height * scale);
-      
+
       const sticker = await image
         .resize(newWidth, newHeight, {
           fit: 'contain',
@@ -260,171 +258,168 @@ const whatsapp = async () => {
 
   sock.ev.on("creds.update", saveCreds);
 
-  // Object untuk menyimpan nama grup berdasarkan ID grup
-const groupNames = {};
+  const groupNames = {};
 
-sock.ev.on("groups.upsert", async (groups) => {
-  for (const group of groups) {
+  sock.ev.on("groups.upsert", async (groups) => {
+    for (const group of groups) {
+      try {
+        const groupMetadata = await sock.groupMetadata(group.id);
+        groupNames[group.id] = groupMetadata.subject;
+        console.log(chalk.green(`Ditambahkan ke grup ${groupMetadata.subject}`));
+        spinner.succeed(`Bot telah dimasukan ke dalam grup ${groupMetadata.subject}`).start("Menunggu perintah...");
+      } catch (error) {
+        console.error("Error fetching group metadata:", error);
+      }
+    }
+  });
+
+  sock.ev.on("groups.update", (updates) => {
+    console.log(chalk.yellow("Groups update event triggered:"));
+    console.log(util.inspect(updates, { depth: null, colors: true }));
+  });
+
+  sock.ev.on("group-participants.update", async (event) => {
+    const { id, participants, action } = event;
+    let groupName = groupNames[id] || id;
+
     try {
-      const groupMetadata = await sock.groupMetadata(group.id);
-      groupNames[group.id] = groupMetadata.subject; // Simpan nama grup berdasarkan ID
-      console.log(chalk.green(`Ditambahkan ke grup ${groupMetadata.subject}`));
-      spinner.succeed(`Bot telah dimasukan ke dalam grup ${groupMetadata.subject}`).start("Menunggu perintah...");
+
+      if (action !== 'remove') {
+        const groupMetadata = await sock.groupMetadata(id);
+        groupName = groupMetadata.subject;
+        groupNames[id] = groupName;
+      }
+
+      if (action === "promote") {
+        console.log(chalk.green(`Bot telah menjadi admin di grup ${groupName}`));
+        spinner.succeed(`Bot telah menjadi admin di grup ${groupName}`).start("Menunggu perintah...");
+      } else if (action === "demote") {
+        console.log(chalk.green(`Bot telah dihapus dari admin di grup ${groupName}`));
+        spinner.succeed(`Bot telah dihapus dari admin di grup ${groupName}`).start("Menunggu perintah...");
+      } else if (action === "remove") {
+
+        if (groupNames[id]) {
+          console.log(chalk.red(`Bot telah dikeluarkan dari grup ${groupNames[id]}`));
+          spinner.succeed(`Bot telah dikeluarkan dari grup ${groupNames[id]}`).start("Menunggu perintah...");
+        } else {
+          console.log(chalk.red(`Bot telah dikeluarkan dari grup ${groupName}`));
+          spinner.succeed(`Bot telah dikeluarkan dari grup ${groupName}`).start("Menunggu perintah...");
+        }
+      }
     } catch (error) {
       console.error("Error fetching group metadata:", error);
-    }
-  }
-});
 
-sock.ev.on("groups.update", (updates) => {
-  console.log(chalk.yellow("Groups update event triggered:"));
-  console.log(util.inspect(updates, { depth: null, colors: true }));
-});
 
-sock.ev.on("group-participants.update", async (event) => {
-  const { id, participants, action } = event;
-  let groupName = groupNames[id] || id; // Ambil nama grup yang disimpan, atau gunakan ID sebagai default
-
-  try {
-    // Ambil metadata grup kecuali untuk aksi 'remove'
-    if (action !== 'remove') {
-      const groupMetadata = await sock.groupMetadata(id);
-      groupName = groupMetadata.subject; // Jika metadata berhasil, gunakan nama grup
-      groupNames[id] = groupName; // Update nama grup di cache
-    }
-
-    if (action === "promote") {
-      console.log(chalk.green(`Bot telah menjadi admin di grup ${groupName}`));
-      spinner.succeed(`Bot telah menjadi admin di grup ${groupName}`).start("Menunggu perintah...");
-    } else if (action === "demote") {
-      console.log(chalk.green(`Bot telah dihapus dari admin di grup ${groupName}`));
-      spinner.succeed(`Bot telah dihapus dari admin di grup ${groupName}`).start("Menunggu perintah...");
-    } else if (action === "remove") {
-      // Cek apakah grup sudah ada dalam cache, jika tidak gunakan ID
-      if (groupNames[id]) {
-        console.log(chalk.red(`Bot telah dikeluarkan dari grup ${groupNames[id]}`)); // Nama grup dari cache
-        spinner.succeed(`Bot telah dikeluarkan dari grup ${groupNames[id]}`).start("Menunggu perintah...");
-      } else {
-        console.log(chalk.red(`Bot telah dikeluarkan dari grup ${groupName}`)); // ID grup jika tidak ada dalam cache
+      if (action === "remove") {
+        console.log(chalk.red(`Bot telah dikeluarkan dari grup ${groupName}`));
         spinner.succeed(`Bot telah dikeluarkan dari grup ${groupName}`).start("Menunggu perintah...");
       }
     }
-  } catch (error) {
-    console.error("Error fetching group metadata:", error);
-    
-    // Jika ada error, tetap berikan log dengan warna merah saat aksi remove
-    if (action === "remove") {
-      console.log(chalk.red(`Bot telah dikeluarkan dari grup ${groupName}`)); // Nama grup diambil dari cache
-      spinner.succeed(`Bot telah dikeluarkan dari grup ${groupName}`).start("Menunggu perintah...");
-    }
-  }
-});
+  });
 
 
-sock.ev.on("messages.upsert", async (messages) => {
-  const message = messages.messages[0];
-  
-  if (!message || !message.message) {
-    return;
-  }
-  
-  let textMessage = "";
-  if (message.message.extendedTextMessage) {
-    textMessage = message.message.extendedTextMessage.text || "";
-  } else if (message.message.conversation) {
-    textMessage = message.message.conversation;
-  } else if (message.message.imageMessage && message.message.imageMessage.caption) {
-    textMessage = message.message.imageMessage.caption;
-  } else if (message.message.videoMessage && message.message.videoMessage.caption) {
-    textMessage = message.message.videoMessage.caption;
-  }
+  sock.ev.on("messages.upsert", async (messages) => {
+    const message = messages.messages[0];
 
-  const senderId = message.key.participant || message.key.remoteJid;
-  const isGroup = message.key.remoteJid.includes("@g.us");
-  const jid = message.key.remoteJid;
-  
-  let groupParticipants = [];
-  let groupSubject = "";
-  if (isGroup) {
-    try {
-      const group = await sock.groupMetadata(jid);
-      groupParticipants = group.participants;
-      groupSubject = group.subject;
-    } catch (error) {
-      console.error("Error fetching group metadata:", error);
+    if (!message || !message.message) {
       return;
     }
-  }
 
-  // Fitur baru: Reply ke sticker dengan .hidetag
-  if (isGroup && textMessage === ".hidetag" && message.message?.extendedTextMessage?.contextInfo?.quotedMessage?.stickerMessage) {
-    spinner
-      .info(
-        `New sticker hidetag command requested in group: ${chalk.underline.bold.yellowBright(
-          groupSubject
-        )} (${
-          groupParticipants.length
-        } participants)\nSticker Hidetag\n\n`
-      )
-      .start();
-
-    const stickerMessage = message.message.extendedTextMessage.contextInfo.quotedMessage.stickerMessage;
-
-    try {
-      await sock.sendMessage(jid, {
-        sticker: stickerMessage,
-        mentions: groupParticipants.map((item) => item.id),
-      });
-    } catch (error) {
-      spinner.fail(
-        `Failed to send sticker using hidetag. Error: ${error.toString()}`
-      );
+    let textMessage = "";
+    if (message.message.extendedTextMessage) {
+      textMessage = message.message.extendedTextMessage.text || "";
+    } else if (message.message.conversation) {
+      textMessage = message.message.conversation;
+    } else if (message.message.imageMessage && message.message.imageMessage.caption) {
+      textMessage = message.message.imageMessage.caption;
+    } else if (message.message.videoMessage && message.message.videoMessage.caption) {
+      textMessage = message.message.videoMessage.caption;
     }
-    // Kembali untuk menghindari pemrosesan lebih lanjut
-    return;
-  }
 
-  // Fitur Hidetag yang sudah ada
-  if (isGroup && textMessage.startsWith(".hidetag")) {
-    spinner
-      .info(
-        `New hidetag command requested in group: ${chalk.underline.bold.yellowBright(
-          groupSubject
-        )} (${
-          groupParticipants.length
-        } participants)\nMessage: ${textMessage}\n\n`
-      )
-      .start();
+    const senderId = message.key.participant || message.key.remoteJid;
+    const isGroup = message.key.remoteJid.includes("@g.us");
+    const jid = message.key.remoteJid;
 
-    const messageBody = textMessage.slice(9).trim() || "Hidetag message";
-
-    try {
-      await sock.sendMessage(jid, {
-        text: messageBody,
-        mentions: groupParticipants.map((item) => item.id),
-      });
-    } catch (error) {
-      spinner.fail(
-        `Failed to send message using hidetag. Error: ${error.toString()}`
-      );
+    let groupParticipants = [];
+    let groupSubject = "";
+    if (isGroup) {
+      try {
+        const group = await sock.groupMetadata(jid);
+        groupParticipants = group.participants;
+        groupSubject = group.subject;
+      } catch (error) {
+        console.error("Error fetching group metadata:", error);
+        return;
+      }
     }
-  }
 
-  // Fitur lain seperti .menu dan .tagall tetap sama
-  if (isGroup && textMessage === ".tagall") {
-    await handleTagAll(sock, jid, groupParticipants, senderId, textMessage);
-  }
 
-  if (textMessage === ".menu") {
-    showMenu(sock, jid);
-  }
+    if (isGroup && textMessage === ".hidetag" && message.message?.extendedTextMessage?.contextInfo?.quotedMessage?.stickerMessage) {
+      spinner
+        .info(
+          `New sticker hidetag command requested in group: ${chalk.underline.bold.yellowBright(
+            groupSubject
+          )} (${groupParticipants.length
+          } participants)\nSticker Hidetag\n\n`
+        )
+        .start();
 
-    // Updated sticker handling for both reply and direct media + caption
+      const stickerMessage = message.message.extendedTextMessage.contextInfo.quotedMessage.stickerMessage;
+
+      try {
+        await sock.sendMessage(jid, {
+          sticker: stickerMessage,
+          mentions: groupParticipants.map((item) => item.id),
+        });
+      } catch (error) {
+        spinner.fail(
+          `Failed to send sticker using hidetag. Error: ${error.toString()}`
+        );
+      }
+
+      return;
+    }
+
+
+    if (isGroup && textMessage.startsWith(".hidetag")) {
+      spinner
+        .info(
+          `New hidetag command requested in group: ${chalk.underline.bold.yellowBright(
+            groupSubject
+          )} (${groupParticipants.length
+          } participants)\nMessage: ${textMessage}\n\n`
+        )
+        .start();
+
+      const messageBody = textMessage.slice(9).trim() || "Hidetag message";
+
+      try {
+        await sock.sendMessage(jid, {
+          text: messageBody,
+          mentions: groupParticipants.map((item) => item.id),
+        });
+      } catch (error) {
+        spinner.fail(
+          `Failed to send message using hidetag. Error: ${error.toString()}`
+        );
+      }
+    }
+
+
+    if (isGroup && textMessage === ".tagall") {
+      await handleTagAll(sock, jid, groupParticipants, senderId, textMessage);
+    }
+
+    if (textMessage === ".menu") {
+      showMenu(sock, jid);
+    }
+
+
     if (textMessage.toLowerCase().startsWith(".sticker")) {
       let mediaMessage;
       let isAnimated = false;
-      
-      // Check if it's a reply to a message
+
+
       if (message.message.extendedTextMessage?.contextInfo?.quotedMessage) {
         const quotedMessage = message.message.extendedTextMessage.contextInfo.quotedMessage;
         if (quotedMessage.imageMessage) {
@@ -433,8 +428,8 @@ sock.ev.on("messages.upsert", async (messages) => {
           mediaMessage = quotedMessage.videoMessage;
           isAnimated = true;
         }
-      } 
-      // Check if it's a direct media message with caption
+      }
+
       else if (message.message.imageMessage) {
         mediaMessage = message.message.imageMessage;
       } else if (message.message.videoMessage) {
@@ -450,7 +445,7 @@ sock.ev.on("messages.upsert", async (messages) => {
           for await (const chunk of stream) {
             buffer = Buffer.concat([buffer, chunk]);
           }
-          await createSticker(buffer, sock, jid, isAnimated, true); // true for maintainRatio
+          await createSticker(buffer, sock, jid, isAnimated, true);
         } catch (error) {
           spinner.fail(`Error creating sticker: ${error.message}`);
         }
