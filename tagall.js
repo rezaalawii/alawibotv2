@@ -12,23 +12,31 @@ import ora from "ora";
 export const handleTagAll = async (sock, groupJid, groupParticipants, senderId, textMessage) => {
   const spinner = ora();
 
-  // Fungsi untuk memeriksa apakah pengirim adalah admin atau owner bot
   const isAdminOrOwner = (participants, sender) => {
-    const ownerBot = "085156096759@s.whatsapp.net"; // Nomor owner bot dalam format JID
+    const ownerBot = "085156096759@s.whatsapp.net"; // Owner bot's JID
     const isAdmin = participants.some(
       (p) => p.id === sender && (p.admin === "admin" || p.admin === "superadmin")
     );
     return isAdmin || sender === ownerBot;
   };
 
-  // Pengecekan jika perintah adalah .tagall
   if (textMessage && textMessage.startsWith(".tagall")) {
-    // Hanya admin atau owner yang boleh menggunakan perintah ini
     if (isAdminOrOwner(groupParticipants, senderId)) {
+      // Get group metadata to fetch the group name
+      let groupName;
+      try {
+        const groupMetadata = await sock.groupMetadata(groupJid);
+        groupName = groupMetadata.subject; // Get the group name
+      } catch (error) {
+        spinner.fail("Failed to fetch group metadata.");
+        console.error("Error fetching group metadata:", error);
+        return;
+      }
+
       spinner
         .info(
           `New tagall command requested in group: ${chalk.underline.bold.yellowBright(
-            groupJid
+            groupName // Use group name here
           )} (${groupParticipants.length} participants)\nMessage: ${textMessage}\n\n`
         )
         .start();
@@ -36,7 +44,7 @@ export const handleTagAll = async (sock, groupJid, groupParticipants, senderId, 
       const messageBody = textMessage.slice(7).trim() || "Tagging all participants!";
 
       try {
-        // Kirim pesan dengan mentions ke semua anggota grup
+        // Send message with mentions to all group members
         await sock.sendMessage(groupJid, {
           text: messageBody,
           mentions: groupParticipants.map((item) => item.id),
