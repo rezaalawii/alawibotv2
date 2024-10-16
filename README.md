@@ -71,7 +71,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ## Contact
 
 Developed by [Reza Alawi](https://github.com/rezaalawii). Feel free to connect on [Instagram](https://www.instagram.com/rezalawiii) or [TikTok](https://www.tiktok.com/@reza_alawi).
-```
+
 
 ### Instructions
 1. Replace `https://github.com/yourusername/alawi-bot.git` with the actual URL of your GitHub repository.
