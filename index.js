@@ -80,7 +80,7 @@ const showMenu = (sock, jid) => {
   sock.sendMessage(jid, { text: menuMessage });
 };
 
-async function createSticker(buffer, sock, jid, isAnimated = false, maintainRatio = true) {
+async function createSticker(buffer, sock, jid, isAnimated = false) {
   try {
     if (isAnimated) {
       const inputFile = `temp_input_${Date.now()}.${buffer.mimetype === 'image/gif' ? 'gif' : 'mp4'}`;
@@ -96,27 +96,36 @@ async function createSticker(buffer, sock, jid, isAnimated = false, maintainRati
       });
 
       const { width, height } = probe.streams[0];
+      
+      // Calculate dimensions to fit within a square while maintaining aspect ratio
       const maxSize = 512;
-      let newWidth, newHeight;
-
-      if (maintainRatio) {
-        const aspectRatio = width / height;
-        if (width > height) {
-          newWidth = Math.min(width, maxSize);
-          newHeight = Math.round(newWidth / aspectRatio);
-        } else {
-          newHeight = Math.min(height, maxSize);
-          newWidth = Math.round(newHeight * aspectRatio);
-        }
-      } else {
-        newWidth = maxSize;
-        newHeight = maxSize;
-      }
+      const scale = Math.min(maxSize / width, maxSize / height);
+      const newWidth = Math.round(width * scale);
+      const newHeight = Math.round(height * scale);
+      
+      // Calculate padding to center the image
+      const padX = Math.round((maxSize - newWidth) / 2);
+      const padY = Math.round((maxSize - newHeight) / 2);
 
       await new Promise((resolve, reject) => {
         ffmpeg(inputFile)
           .inputOptions(['-t', '10']) // Limit to first 10 seconds
-          .size(`${newWidth}x${newHeight}`)
+          .complexFilter([
+            // Scale while maintaining aspect ratio
+            `scale=${newWidth}:${newHeight}:force_original_aspect_ratio=decrease`,
+            // Pad to square with transparency
+            `pad=${maxSize}:${maxSize}:${padX}:${padY}:color=ffffff00`
+          ])
+          .outputOptions([
+            '-vcodec', 'libwebp',
+            '-vf', 'format=yuva420p',
+            '-lossless', '1',
+            '-compression_level', '6',
+            '-qscale', '20',
+            '-preset', 'default',
+            '-loop', '0'
+          ])
+          .toFormat('webp')
           .output(outputFile)
           .on('end', resolve)
           .on('error', reject)
@@ -126,37 +135,39 @@ async function createSticker(buffer, sock, jid, isAnimated = false, maintainRati
       const stickerBuffer = await fs.readFile(outputFile);
       await sock.sendMessage(jid, { sticker: stickerBuffer });
 
+      // Cleanup temporary files
       await fs.unlink(inputFile);
       await fs.unlink(outputFile);
     } else {
       const image = sharp(buffer);
       const metadata = await image.metadata();
+      
+      // Target dimensions
       const maxSize = 512;
       
-      // Calculate new dimensions while maintaining aspect ratio
-      const aspectRatio = metadata.width / metadata.height;
-      let newWidth, newHeight;
-
-      if (maintainRatio) {
-        if (metadata.width > metadata.height) {
-          newWidth = Math.min(metadata.width, maxSize);
-          newHeight = Math.round(newWidth / aspectRatio);
-        } else {
-          newHeight = Math.min(metadata.height, maxSize);
-          newWidth = Math.round(newHeight * aspectRatio);
-        }
-      } else {
-        newWidth = maxSize;
-        newHeight = maxSize;
-      }
-
-      // Resize image while maintaining transparency
+      // Calculate dimensions to fit within a square while maintaining aspect ratio
+      const scale = Math.min(maxSize / metadata.width, maxSize / metadata.height);
+      const newWidth = Math.round(metadata.width * scale);
+      const newHeight = Math.round(metadata.height * scale);
+      
+      // Create a square canvas with transparency
       const sticker = await image
         .resize(newWidth, newHeight, {
-          fit: 'inside',
+          fit: 'contain',
           background: { r: 0, g: 0, b: 0, alpha: 0 }
         })
-        .webp({ quality: 80 })
+        .extend({
+          top: Math.round((maxSize - newHeight) / 2),
+          bottom: Math.round((maxSize - newHeight) / 2),
+          left: Math.round((maxSize - newWidth) / 2),
+          right: Math.round((maxSize - newWidth) / 2),
+          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        })
+        .webp({
+          quality: 100,
+          lossless: true,
+          force: true
+        })
         .toBuffer();
 
       await sock.sendMessage(jid, { sticker });
@@ -176,7 +187,7 @@ const whatsapp = async () => {
     auth: state,
     printQRInTerminal: false,
     logger,
-    browser: ["Hidetag Bot", "Chrome", "20.0.04"],
+    browser: ["Alawi Bot", "Chrome", "20.0.04"],
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
   });
@@ -220,7 +231,7 @@ const whatsapp = async () => {
 
       if (shouldReconnect || requiredRestart) {
         showBanner();
-        spinner.start("Reconnecting...");
+        spinner.start("Menghubungkan...");
         whatsapp();
       }
     } else if (connection === "open") {
