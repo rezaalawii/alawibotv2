@@ -14,6 +14,8 @@ import fs from "fs-extra";
 import sharp from "sharp";
 import util from 'util';
 import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+ffmpeg.setFfmpegPath(ffmpegStatic);
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -83,74 +85,92 @@ const showMenu = (sock, jid) => {
 async function createSticker(buffer, sock, jid, isAnimated = false) {
   try {
     if (isAnimated) {
-      const inputFile = `temp_input_${Date.now()}.${buffer.mimetype === 'image/gif' ? 'gif' : 'mp4'}`;
-      const outputFile = `temp_output_${Date.now()}.webp`;
+      // Use path.join for proper file paths
+      const tempPath = './temp'; // Folder untuk menyimpan file temporary
+      
+      // Buat folder temp jika belum ada
+      if (!fs.existsSync(tempPath)) {
+        await fs.mkdir(tempPath);
+      }
 
+      const timestamp = Date.now();
+      const inputFile = `${tempPath}/input_${timestamp}.${buffer.mimetype === 'image/gif' ? 'gif' : 'mp4'}`;
+      const outputFile = `${tempPath}/output_${timestamp}.webp`;
+
+      // Tulis file input
       await fs.writeFile(inputFile, buffer);
 
-      const probe = await new Promise((resolve, reject) => {
-        ffmpeg.ffprobe(inputFile, (err, metadata) => {
-          if (err) reject(err);
-          else resolve(metadata);
+      try {
+        // Get video metadata
+        const probe = await new Promise((resolve, reject) => {
+          ffmpeg.ffprobe(inputFile, (err, metadata) => {
+            if (err) reject(err);
+            else resolve(metadata);
+          });
         });
-      });
 
-      const { width, height } = probe.streams[0];
-      
-      // Calculate dimensions to fit within a square while maintaining aspect ratio
-      const maxSize = 512;
-      const scale = Math.min(maxSize / width, maxSize / height);
-      const newWidth = Math.round(width * scale);
-      const newHeight = Math.round(height * scale);
-      
-      // Calculate padding to center the image
-      const padX = Math.round((maxSize - newWidth) / 2);
-      const padY = Math.round((maxSize - newHeight) / 2);
+        const { width, height } = probe.streams[0];
+        
+        // Calculate dimensions
+        const maxSize = 512;
+        const scale = Math.min(maxSize / width, maxSize / height);
+        const newWidth = Math.round(width * scale);
+        const newHeight = Math.round(height * scale);
+        
+        // Calculate padding
+        const padX = Math.round((maxSize - newWidth) / 2);
+        const padY = Math.round((maxSize - newHeight) / 2);
 
-      await new Promise((resolve, reject) => {
-        ffmpeg(inputFile)
-          .inputOptions(['-t', '10']) // Limit to first 10 seconds
-          .complexFilter([
-            // Scale while maintaining aspect ratio
-            `scale=${newWidth}:${newHeight}:force_original_aspect_ratio=decrease`,
-            // Pad to square with transparency
-            `pad=${maxSize}:${maxSize}:${padX}:${padY}:color=ffffff00`
-          ])
-          .outputOptions([
-            '-vcodec', 'libwebp',
-            '-vf', 'format=yuva420p',
-            '-lossless', '1',
-            '-compression_level', '6',
-            '-qscale', '20',
-            '-preset', 'default',
-            '-loop', '0'
-          ])
-          .toFormat('webp')
-          .output(outputFile)
-          .on('end', resolve)
-          .on('error', reject)
-          .run();
-      });
+        // Proses konversi
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputFile)
+            .addOutputOptions([
+              `-vf`, `scale=${newWidth}:${newHeight},pad=${maxSize}:${maxSize}:${padX}:${padY}:color=ffffff00,format=yuva420p`,
+              `-vcodec`, `libwebp`,
+              `-lossless`, `1`,
+              `-qscale`, `90`,
+              `-preset`, `default`,
+              `-loop`, `0`,
+              `-an`,
+              `-vsync`, `0`,
+              `-t`, `10`
+            ])
+            .toFormat('webp')
+            .on('end', resolve)
+            .on('error', reject)
+            .save(outputFile);
+        });
 
-      const stickerBuffer = await fs.readFile(outputFile);
-      await sock.sendMessage(jid, { sticker: stickerBuffer });
+        // Baca file output
+        const stickerBuffer = await fs.readFile(outputFile);
+        
+        // Kirim sticker
+        await sock.sendMessage(jid, { sticker: stickerBuffer });
 
-      // Cleanup temporary files
-      await fs.unlink(inputFile);
-      await fs.unlink(outputFile);
+        // Hapus file temporary
+        await fs.unlink(inputFile).catch(console.error);
+        await fs.unlink(outputFile).catch(console.error);
+
+      } catch (ffmpegError) {
+        console.error('FFmpeg Error:', ffmpegError);
+        spinner.fail(`FFmpeg Error: ${ffmpegError.message}`);
+        
+        // Cleanup pada kasus error
+        await fs.unlink(inputFile).catch(console.error);
+        await fs.unlink(outputFile).catch(console.error);
+        throw ffmpegError;
+      }
+
     } else {
       const image = sharp(buffer);
       const metadata = await image.metadata();
       
-      // Target dimensions
       const maxSize = 512;
       
-      // Calculate dimensions to fit within a square while maintaining aspect ratio
       const scale = Math.min(maxSize / metadata.width, maxSize / metadata.height);
       const newWidth = Math.round(metadata.width * scale);
       const newHeight = Math.round(metadata.height * scale);
       
-      // Create a square canvas with transparency
       const sticker = await image
         .resize(newWidth, newHeight, {
           fit: 'contain',
@@ -178,7 +198,6 @@ async function createSticker(buffer, sock, jid, isAnimated = false) {
     console.error('Detailed error:', error);
   }
 }
-
 
 const whatsapp = async () => {
   const { state, saveCreds } = await useMultiFileAuthState(".auth_sessions");
