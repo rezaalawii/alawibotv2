@@ -13,49 +13,56 @@ export const handleTagAll = async (sock, groupJid, groupParticipants, senderId, 
   const spinner = ora();
 
   const isAdminOrOwner = (participants, sender) => {
-    const ownerBot = "085156096759@s.whatsapp.net"; // Owner bot's JID
+    const ownerBot = "6285156096759@s.whatsapp.net"; // Format JID pemilik bot
     const isAdmin = participants.some(
       (p) => p.id === sender && (p.admin === "admin" || p.admin === "superadmin")
     );
+    console.log("Sender ID:", sender); // Debugging
+    console.log("Owner Bot:", ownerBot); // Debugging
     return isAdmin || sender === ownerBot;
-  };
+  };  
 
   if (textMessage && textMessage.startsWith(".tagall")) {
     if (isAdminOrOwner(groupParticipants, senderId)) {
-      // Get group metadata to fetch the group name
+      // Mendapatkan metadata grup untuk mengambil nama grup
       let groupName;
       try {
         const groupMetadata = await sock.groupMetadata(groupJid);
-        groupName = groupMetadata.subject; // Get the group name
+        groupName = groupMetadata.subject; // Ambil nama grup
       } catch (error) {
-        spinner.fail("Failed to fetch group metadata.");
-        console.error("Error fetching group metadata:", error);
+        spinner.fail("Gagal mendapatkan metadata grup.");
+        console.error("Error mengambil metadata grup:", error);
         return;
       }
 
       spinner
         .info(
-          `New tagall command requested in group: ${chalk.underline.bold.yellowBright(
-            groupName // Use group name here
-          )} (${groupParticipants.length} participants)\nMessage: ${textMessage}\n\n`
+          `Perintah tagall baru diminta di grup: ${chalk.underline.bold.yellowBright(
+            groupName // Gunakan nama grup di sini
+          )} (${groupParticipants.length} anggota)\nPesan: ${textMessage}\n\n`
         )
         .start();
 
-      const messageBody = textMessage.slice(7).trim() || "Tagging all participants!";
+      const messageBody = textMessage.slice(7).trim() || "Everyone!";
 
       try {
-        // Send message with mentions to all group members
+        // Mengirim pesan dengan menyebutkan semua anggota grup
         await sock.sendMessage(groupJid, {
           text: messageBody,
           mentions: groupParticipants.map((item) => item.id),
         });
 
-        spinner.succeed("Tagall message sent successfully");
+        spinner.succeed("Pesan tagall berhasil dikirim");
       } catch (error) {
-        spinner.fail(`Failed to send tagall message. Error: ${error.toString()}`);
+        spinner.fail(`Gagal mengirim pesan tagall. Error: ${error.toString()}`);
       }
     } else {
-      spinner.fail("Tagall command can only be used by group admins or the bot owner.");
+      // Mengirim notifikasi ke grup
+      await sock.sendMessage(groupJid, {
+        text: `⚠️ *Perintah tagall hanya dapat digunakan oleh admin grup atau pemilik bot.*`
+      });
+
+      spinner.fail("Perintah tagall hanya dapat digunakan oleh admin grup atau pemilik bot."); 
     }
   }
 };
